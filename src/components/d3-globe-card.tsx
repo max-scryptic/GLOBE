@@ -11,6 +11,8 @@ const COUNTRY_FILL = "#a8df8e";
 const SELECTED_COUNTRY_FILL = "#2f7d4d";
 const COUNTRY_STROKE = "#facc15";
 const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
+const FLIGHT_PATH_STROKE_RGB = "236, 72, 153";
+const FLIGHT_PATH_GLOW_RGB = "255, 255, 255";
 const FLIGHT_MARKER_FILL = "#f97316";
 const FLIGHT_ROUTE_SAMPLE_COUNT = 96;
 const FLIGHT_ROUTE_FLATTENING = 0.5;
@@ -253,6 +255,43 @@ function getCoordinateVisibility(
   return Math.min(Math.max(cosineDistance / FLIGHT_ROUTE_EDGE_FADE, 0), 1);
 }
 
+function getAngularDistance(
+  from: [number, number],
+  to: [number, number],
+) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const [fromLongitude, fromLatitude] = from.map(toRadians);
+  const [toLongitude, toLatitude] = to.map(toRadians);
+  const deltaLongitude = toLongitude - fromLongitude;
+  const deltaLatitude = toLatitude - fromLatitude;
+  const haversine =
+    Math.sin(deltaLatitude / 2) ** 2 +
+    Math.cos(fromLatitude) *
+      Math.cos(toLatitude) *
+      Math.sin(deltaLongitude / 2) ** 2;
+
+  return 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function liftPointAboveGlobe(
+  point: [number, number],
+  center: [number, number],
+  lift: number,
+): [number, number] {
+  const deltaX = point[0] - center[0];
+  const deltaY = point[1] - center[1];
+  const distance = Math.hypot(deltaX, deltaY);
+
+  if (distance === 0) {
+    return [point[0], point[1] - lift];
+  }
+
+  return [
+    point[0] + (deltaX / distance) * lift,
+    point[1] + (deltaY / distance) * lift,
+  ];
+}
+
 function drawFlightMarker(
   context: CanvasRenderingContext2D,
   projection: Projection,
@@ -342,6 +381,7 @@ function getRouteGradient(
 function drawFlightRoute(
   context: CanvasRenderingContext2D,
   projection: Projection,
+  route: FlightRoute,
   interpolate: (value: number) => [number, number],
   center: [number, number],
   radius: number,
@@ -351,9 +391,12 @@ function drawFlightRoute(
   const visibleSegments: FlightRoutePoint[][] = [];
   let currentSegment: FlightRoutePoint[] = [];
   let previousPoint: [number, number] | null = null;
+  const distance = getAngularDistance(route.fromCoordinates, route.toCoordinates);
+  const arcHeight = radius * Math.min(0.17, 0.08 + distance * 0.035);
 
   for (let index = 0; index <= FLIGHT_ROUTE_SAMPLE_COUNT; index += 1) {
-    const coordinates = interpolate(index / FLIGHT_ROUTE_SAMPLE_COUNT);
+    const progress = index / FLIGHT_ROUTE_SAMPLE_COUNT;
+    const coordinates = interpolate(progress);
     const point = projection(coordinates);
     const visibility = getCoordinateVisibility(coordinates, rotation);
     const distanceFromCenter = point
@@ -370,7 +413,11 @@ function drawFlightRoute(
       distanceFromPrevious < radius * 0.4;
 
     if (point && isVisible) {
-      currentSegment.push({ alpha: visibility, point });
+      const lift = Math.sin(progress * Math.PI) * arcHeight;
+      currentSegment.push({
+        alpha: visibility,
+        point: liftPointAboveGlobe(point, center, lift),
+      });
       previousPoint = point;
       continue;
     }
@@ -402,18 +449,18 @@ function drawFlightRoute(
     context.strokeStyle = getRouteGradient(
       context,
       segment,
-      (alpha) => `rgba(14, 165, 233, ${0.18 * alpha})`,
+      (alpha) => `rgba(${FLIGHT_PATH_GLOW_RGB}, ${0.62 * alpha})`,
     );
-    context.lineWidth = 8;
+    context.lineWidth = 9;
     context.stroke();
     context.setLineDash([8, 10]);
     context.lineDashOffset = dashOffset;
     context.strokeStyle = getRouteGradient(
       context,
       segment,
-      (alpha) => `rgba(37, 99, 235, ${0.78 * alpha})`,
+      (alpha) => `rgba(${FLIGHT_PATH_STROKE_RGB}, ${0.96 * alpha})`,
     );
-    context.lineWidth = 2.2;
+    context.lineWidth = 2.8;
     context.stroke();
     context.restore();
   });
@@ -648,6 +695,7 @@ export function D3GlobeCard({
               drawFlightRoute(
                 context,
                 projection,
+                route,
                 interpolate,
                 center,
                 visibleRadius,
