@@ -30,14 +30,23 @@ export function CobeGlobeCard() {
     }
 
     let phi = 0;
+    let theta = 0.28;
+    let zoomScale = 1;
+    let isDragging = false;
+    let lastPointerPosition: { x: number; y: number } | null = null;
     let frameId = 0;
     const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const clamp = (value: number, min: number, max: number) =>
+      Math.min(Math.max(value, min), max);
+    const updateCursor = () => {
+      canvas.style.cursor = isDragging ? "grabbing" : "grab";
+    };
     const globe = createGlobe(canvas, {
       devicePixelRatio,
       width: size.width * devicePixelRatio,
       height: size.height * devicePixelRatio,
       phi,
-      theta: 0.28,
+      theta,
       dark: 0,
       diffuse: 1.25,
       mapSamples: 16000,
@@ -53,15 +62,66 @@ export function CobeGlobeCard() {
       scale: 1,
     });
 
+    const handlePointerDown = (event: PointerEvent) => {
+      isDragging = true;
+      lastPointerPosition = { x: event.clientX, y: event.clientY };
+      canvas.setPointerCapture(event.pointerId);
+      updateCursor();
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isDragging || !lastPointerPosition) {
+        return;
+      }
+
+      const deltaX = event.clientX - lastPointerPosition.x;
+      const deltaY = event.clientY - lastPointerPosition.y;
+      phi += deltaX * 0.006;
+      theta = clamp(theta + deltaY * 0.004, -1.05, 1.05);
+      lastPointerPosition = { x: event.clientX, y: event.clientY };
+    };
+
+    const stopDragging = (event: PointerEvent) => {
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+
+      isDragging = false;
+      lastPointerPosition = null;
+      updateCursor();
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const zoomDelta = event.deltaY > 0 ? -0.08 : 0.08;
+      zoomScale = clamp(zoomScale + zoomDelta, 0.75, 1.55);
+    };
+
+    updateCursor();
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointermove", handlePointerMove);
+    canvas.addEventListener("pointerup", stopDragging);
+    canvas.addEventListener("pointercancel", stopDragging);
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+
     const animate = () => {
-      phi += 0.004;
-      globe.update({ phi });
+      if (!isDragging) {
+        phi += 0.004;
+      }
+
+      globe.update({ phi, theta, scale: zoomScale });
       frameId = requestAnimationFrame(animate);
     };
 
     frameId = requestAnimationFrame(animate);
 
     return () => {
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("pointerup", stopDragging);
+      canvas.removeEventListener("pointercancel", stopDragging);
+      canvas.removeEventListener("wheel", handleWheel);
+      canvas.style.cursor = "";
       cancelAnimationFrame(frameId);
       globe.destroy();
     };
@@ -82,7 +142,7 @@ export function CobeGlobeCard() {
         <canvas
           ref={canvasRef}
           className="h-full w-full"
-          style={{ contain: "layout paint size" }}
+          style={{ contain: "layout paint size", touchAction: "none" }}
           width={size.width * 2}
           height={size.height * 2}
         />
