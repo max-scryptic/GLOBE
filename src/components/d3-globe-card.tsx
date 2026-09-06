@@ -7,16 +7,9 @@ const D3_SCRIPT_URL = "https://d3js.org/d3.v7.min.js";
 const WORLD_GEOJSON_URL =
   "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson";
 
-const countryColors = [
-  "#7cc96f",
-  "#f1c453",
-  "#ef8f6b",
-  "#79b7df",
-  "#b48bd4",
-  "#8fd3c7",
-  "#d7a95f",
-  "#98c66e",
-];
+const COUNTRY_FILL = "#a8df8e";
+const COUNTRY_STROKE = "rgba(35, 104, 74, 0.36)";
+const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
 
 type GeoFeature = {
   type: "Feature";
@@ -110,14 +103,13 @@ function fillCountry(
   context: CanvasRenderingContext2D,
   path: GeoPath,
   feature: GeoFeature,
-  index: number,
 ) {
   context.beginPath();
   path(feature);
-  context.fillStyle = countryColors[index % countryColors.length];
+  context.fillStyle = COUNTRY_FILL;
   context.fill();
-  context.strokeStyle = "#ffd84d";
-  context.lineWidth = 1.6;
+  context.strokeStyle = COUNTRY_STROKE;
+  context.lineWidth = 1.2;
   context.stroke();
 }
 
@@ -186,25 +178,16 @@ export function D3GlobeCard() {
           path({ type: "Sphere" });
           context.fillStyle = "#79d8ee";
           context.fill();
-          context.strokeStyle = "#ffd84d";
-          context.lineWidth = 2.4;
-          context.stroke();
 
           context.beginPath();
           path(graticule);
-          context.strokeStyle = "rgba(255, 216, 77, 0.34)";
+          context.strokeStyle = GRATICULE_STROKE;
           context.lineWidth = 0.9;
           context.stroke();
 
-          world.features.forEach((feature, index) => {
-            fillCountry(context, path, feature, index);
+          world.features.forEach((feature) => {
+            fillCountry(context, path, feature);
           });
-
-          context.beginPath();
-          path({ type: "Sphere" });
-          context.strokeStyle = "#f4bd14";
-          context.lineWidth = 3;
-          context.stroke();
 
           rotation += 0.16;
           frameId = requestAnimationFrame(render);
