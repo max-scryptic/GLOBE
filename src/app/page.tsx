@@ -4,9 +4,10 @@ import { useState } from "react";
 import { CobeGlobeCard } from "@/components/cobe-globe-card";
 import { D3GlobeCard } from "@/components/d3-globe-card";
 import { ReactGlobeCard } from "@/components/react-globe-card";
+import { SatelliteGlobeCard } from "@/components/satellite-globe-card";
 import { cn } from "@/lib/utils";
 
-const tabs = ["Globes", "Country Selector", "Flight Paths"] as const;
+const tabs = ["Globes", "Country Selector", "Flight Paths", "Satellites"] as const;
 
 type Tab = (typeof tabs)[number];
 
@@ -47,7 +48,7 @@ export default function Home() {
             selectable
             title="Country Selector"
           />
-        ) : (
+        ) : activeTab === "Flight Paths" ? (
           <D3GlobeCard
             description="Select countries while animated routes mimic international flight paths."
             globeClassName="h-[620px] min-h-[460px]"
@@ -55,6 +56,8 @@ export default function Home() {
             showFlightPaths
             title="Flight Paths"
           />
+        ) : (
+          <SatelliteGlobeCard />
         )}
       </div>
     </main>
