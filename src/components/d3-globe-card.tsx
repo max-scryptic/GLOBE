@@ -11,9 +11,10 @@ const COUNTRY_FILL = "#a8df8e";
 const SELECTED_COUNTRY_FILL = "#2f7d4d";
 const COUNTRY_STROKE = "#facc15";
 const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
-const FLIGHT_PATH_STROKE = "rgba(37, 99, 235, 0.78)";
-const FLIGHT_PATH_GLOW = "rgba(14, 165, 233, 0.18)";
 const FLIGHT_MARKER_FILL = "#f97316";
+const FLIGHT_ROUTE_SAMPLE_COUNT = 96;
+const FLIGHT_ROUTE_FLATTENING = 0.5;
+const FLIGHT_ROUTE_EDGE_FADE = 0.16;
 
 type GeoFeature = {
   type: "Feature";
@@ -232,7 +233,7 @@ function getCountryKey(feature: GeoFeature, index: number) {
     : `country-${index}`;
 }
 
-function isCoordinateVisible(
+function getCoordinateVisibility(
   coordinates: [number, number],
   rotation: [number, number, number],
 ) {
@@ -249,7 +250,7 @@ function isCoordinateVisible(
       Math.cos(latitudeRadians) *
       Math.cos(deltaLongitude);
 
-  return cosineDistance >= 0;
+  return Math.min(Math.max(cosineDistance / FLIGHT_ROUTE_EDGE_FADE, 0), 1);
 }
 
 function drawFlightMarker(
@@ -261,15 +262,18 @@ function drawFlightMarker(
   rotation: [number, number, number],
 ) {
   const point = projection(coordinates);
+  const visibility = getCoordinateVisibility(coordinates, rotation);
 
   if (
     !point ||
-    !isCoordinateVisible(coordinates, rotation) ||
+    visibility <= 0 ||
     Math.hypot(point[0] - center[0], point[1] - center[1]) > radius
   ) {
     return;
   }
 
+  context.save();
+  context.globalAlpha = visibility;
   context.beginPath();
   context.arc(point[0], point[1], 3.5, 0, Math.PI * 2);
   context.fillStyle = FLIGHT_MARKER_FILL;
@@ -277,6 +281,62 @@ function drawFlightMarker(
   context.lineWidth = 1.4;
   context.strokeStyle = "rgba(255, 255, 255, 0.88)";
   context.stroke();
+  context.restore();
+}
+
+type FlightRoutePoint = {
+  alpha: number;
+  point: [number, number];
+};
+
+function flattenFlightRouteSegment(segment: FlightRoutePoint[]) {
+  if (segment.length < 2) {
+    return segment;
+  }
+
+  const firstPoint = segment[0].point;
+  const lastPoint = segment[segment.length - 1].point;
+  const divisor = segment.length - 1;
+
+  return segment.map((sample, index) => {
+    const progress = index / divisor;
+    const chordPoint: [number, number] = [
+      firstPoint[0] + (lastPoint[0] - firstPoint[0]) * progress,
+      firstPoint[1] + (lastPoint[1] - firstPoint[1]) * progress,
+    ];
+
+    return {
+      alpha: sample.alpha,
+      point: [
+        sample.point[0] +
+          (chordPoint[0] - sample.point[0]) * FLIGHT_ROUTE_FLATTENING,
+        sample.point[1] +
+          (chordPoint[1] - sample.point[1]) * FLIGHT_ROUTE_FLATTENING,
+      ] satisfies [number, number],
+    };
+  });
+}
+
+function getRouteGradient(
+  context: CanvasRenderingContext2D,
+  segment: FlightRoutePoint[],
+  color: (alpha: number) => string,
+) {
+  const firstPoint = segment[0].point;
+  const lastPoint = segment[segment.length - 1].point;
+  const gradient = context.createLinearGradient(
+    firstPoint[0],
+    firstPoint[1],
+    lastPoint[0],
+    lastPoint[1],
+  );
+  const divisor = segment.length - 1;
+
+  segment.forEach(({ alpha }, index) => {
+    gradient.addColorStop(index / divisor, color(alpha));
+  });
+
+  return gradient;
 }
 
 function drawFlightRoute(
@@ -288,37 +348,49 @@ function drawFlightRoute(
   dashOffset: number,
   rotation: [number, number, number],
 ) {
-  const visibleSegments: [number, number][][] = [];
-  let currentSegment: [number, number][] = [];
+  const visibleSegments: FlightRoutePoint[][] = [];
+  let currentSegment: FlightRoutePoint[] = [];
+  let previousPoint: [number, number] | null = null;
 
-  for (let index = 0; index <= 48; index += 1) {
-    const coordinates = interpolate(index / 48);
+  for (let index = 0; index <= FLIGHT_ROUTE_SAMPLE_COUNT; index += 1) {
+    const coordinates = interpolate(index / FLIGHT_ROUTE_SAMPLE_COUNT);
     const point = projection(coordinates);
+    const visibility = getCoordinateVisibility(coordinates, rotation);
+    const distanceFromCenter = point
+      ? Math.hypot(point[0] - center[0], point[1] - center[1])
+      : Infinity;
+    const distanceFromPrevious =
+      point && previousPoint
+        ? Math.hypot(point[0] - previousPoint[0], point[1] - previousPoint[1])
+        : 0;
     const isVisible =
       point &&
-      isCoordinateVisible(coordinates, rotation) &&
-      Math.hypot(point[0] - center[0], point[1] - center[1]) <= radius + 1;
+      visibility > 0 &&
+      distanceFromCenter <= radius + 2 &&
+      distanceFromPrevious < radius * 0.4;
 
     if (point && isVisible) {
-      currentSegment.push(point);
+      currentSegment.push({ alpha: visibility, point });
+      previousPoint = point;
       continue;
     }
 
     if (currentSegment.length > 1) {
-      visibleSegments.push(currentSegment);
+      visibleSegments.push(flattenFlightRouteSegment(currentSegment));
     }
 
     currentSegment = [];
+    previousPoint = point;
   }
 
   if (currentSegment.length > 1) {
-    visibleSegments.push(currentSegment);
+    visibleSegments.push(flattenFlightRouteSegment(currentSegment));
   }
 
   visibleSegments.forEach((segment) => {
     context.save();
     context.beginPath();
-    segment.forEach(([x, y], index) => {
+    segment.forEach(({ point: [x, y] }, index) => {
       if (index === 0) {
         context.moveTo(x, y);
       } else {
@@ -327,12 +399,20 @@ function drawFlightRoute(
     });
     context.lineCap = "round";
     context.lineJoin = "round";
-    context.strokeStyle = FLIGHT_PATH_GLOW;
+    context.strokeStyle = getRouteGradient(
+      context,
+      segment,
+      (alpha) => `rgba(14, 165, 233, ${0.18 * alpha})`,
+    );
     context.lineWidth = 8;
     context.stroke();
     context.setLineDash([8, 10]);
     context.lineDashOffset = dashOffset;
-    context.strokeStyle = FLIGHT_PATH_STROKE;
+    context.strokeStyle = getRouteGradient(
+      context,
+      segment,
+      (alpha) => `rgba(37, 99, 235, ${0.78 * alpha})`,
+    );
     context.lineWidth = 2.2;
     context.stroke();
     context.restore();
