@@ -8,6 +8,7 @@ const WORLD_GEOJSON_URL =
   "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson";
 
 const COUNTRY_FILL = "#a8df8e";
+const SELECTED_COUNTRY_FILL = "#2f7d4d";
 const COUNTRY_STROKE = "#facc15";
 const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
 
@@ -24,6 +25,7 @@ type FeatureCollection = {
 
 type Projection = {
   clipAngle(value: number): Projection;
+  invert(point: [number, number]): [number, number] | null;
   rotate(value: [number, number, number]): Projection;
   scale(value: number): Projection;
   translate(value: [number, number]): Projection;
@@ -103,22 +105,47 @@ function fillCountry(
   context: CanvasRenderingContext2D,
   path: GeoPath,
   feature: GeoFeature,
+  isSelected = false,
 ) {
   context.beginPath();
   path(feature);
-  context.fillStyle = COUNTRY_FILL;
+  context.fillStyle = isSelected ? SELECTED_COUNTRY_FILL : COUNTRY_FILL;
   context.fill();
   context.strokeStyle = COUNTRY_STROKE;
   context.lineWidth = 1.2;
   context.stroke();
 }
 
-export function D3GlobeCard() {
+function getCountryKey(feature: GeoFeature, index: number) {
+  const name = feature.properties?.name;
+
+  return typeof name === "string" && name.length > 0
+    ? name
+    : `country-${index}`;
+}
+
+type D3GlobeCardProps = {
+  className?: string;
+  description?: string;
+  globeClassName?: string;
+  selectable?: boolean;
+  title?: string;
+};
+
+export function D3GlobeCard({
+  className = "",
+  description = "A flat-color orthographic globe drawn with D3 geographic projections.",
+  globeClassName = "",
+  selectable = false,
+  title = "D3.js",
+}: D3GlobeCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { ref: containerRef, size } = useElementSize<HTMLDivElement>();
+  const selectedCountriesRef = useRef<Set<string>>(new Set());
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
+  const [selectedCount, setSelectedCount] = useState(0);
 
   useEffect(() => {
     const activeCanvas = canvasRef.current;
@@ -173,6 +200,7 @@ export function D3GlobeCard() {
         let zoomScale = 1;
         let isDragging = false;
         let lastPointerPosition: { x: number; y: number } | null = null;
+        let pointerDownPosition: { x: number; y: number } | null = null;
 
         const clamp = (value: number, min: number, max: number) =>
           Math.min(Math.max(value, min), max);
@@ -184,6 +212,7 @@ export function D3GlobeCard() {
         const handlePointerDown = (event: PointerEvent) => {
           isDragging = true;
           lastPointerPosition = { x: event.clientX, y: event.clientY };
+          pointerDownPosition = { x: event.clientX, y: event.clientY };
           canvas.setPointerCapture(event.pointerId);
           updateCursor();
         };
@@ -219,17 +248,65 @@ export function D3GlobeCard() {
           zoomScale = clamp(zoomScale + zoomDelta, 0.7, 1.75);
         };
 
+        const handleClick = (event: MouseEvent) => {
+          if (!selectable || !pointerDownPosition) {
+            return;
+          }
+
+          const dragDistance = Math.hypot(
+            event.clientX - pointerDownPosition.x,
+            event.clientY - pointerDownPosition.y,
+          );
+
+          if (dragDistance > 6) {
+            return;
+          }
+
+          const rect = canvas.getBoundingClientRect();
+          const coordinates = projection.invert([
+            event.clientX - rect.left,
+            event.clientY - rect.top,
+          ]);
+
+          if (!coordinates) {
+            return;
+          }
+
+          const countryIndex = world.features.findIndex((feature) =>
+            d3.geoContains(feature, coordinates),
+          );
+
+          if (countryIndex < 0) {
+            return;
+          }
+
+          const countryKey = getCountryKey(
+            world.features[countryIndex],
+            countryIndex,
+          );
+
+          if (selectedCountriesRef.current.has(countryKey)) {
+            selectedCountriesRef.current.delete(countryKey);
+          } else {
+            selectedCountriesRef.current.add(countryKey);
+          }
+
+          setSelectedCount(selectedCountriesRef.current.size);
+        };
+
         updateCursor();
         canvas.addEventListener("pointerdown", handlePointerDown);
         canvas.addEventListener("pointermove", handlePointerMove);
         canvas.addEventListener("pointerup", stopDragging);
         canvas.addEventListener("pointercancel", stopDragging);
+        canvas.addEventListener("click", handleClick);
         canvas.addEventListener("wheel", handleWheel, { passive: false });
         disposeInteraction = () => {
           canvas.removeEventListener("pointerdown", handlePointerDown);
           canvas.removeEventListener("pointermove", handlePointerMove);
           canvas.removeEventListener("pointerup", stopDragging);
           canvas.removeEventListener("pointercancel", stopDragging);
+          canvas.removeEventListener("click", handleClick);
           canvas.removeEventListener("wheel", handleWheel);
           canvas.style.cursor = "";
         };
@@ -249,8 +326,13 @@ export function D3GlobeCard() {
           context.lineWidth = 0.9;
           context.stroke();
 
-          world.features.forEach((feature) => {
-            fillCountry(context, path, feature);
+          world.features.forEach((feature, index) => {
+            fillCountry(
+              context,
+              path,
+              feature,
+              selectedCountriesRef.current.has(getCountryKey(feature, index)),
+            );
           });
 
           if (!isDragging) {
@@ -275,19 +357,31 @@ export function D3GlobeCard() {
       cancelAnimationFrame(frameId);
       disposeInteraction();
     };
-  }, [size.height, size.width]);
+  }, [selectable, size.height, size.width]);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-      <div className="border-b border-zinc-200 px-5 py-4">
-        <h2 className="text-base font-semibold text-zinc-950">D3.js</h2>
-        <p className="mt-1 text-sm text-zinc-600">
-          A flat-color orthographic globe drawn with D3 geographic projections.
-        </p>
+    <section
+      className={`overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm ${className}`}
+    >
+      <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
+          <p className="mt-1 text-sm text-zinc-600">{description}</p>
+        </div>
+        {selectable ? (
+          <div className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-right">
+            <div className="text-lg font-semibold leading-none text-emerald-900">
+              {selectedCount}
+            </div>
+            <div className="mt-1 text-xs font-medium text-emerald-700">
+              selected
+            </div>
+          </div>
+        ) : null}
       </div>
       <div
         ref={containerRef}
-        className="relative flex h-[420px] min-h-[320px] items-center justify-center bg-[#edf7f8]"
+        className={`relative flex h-[420px] min-h-[320px] items-center justify-center bg-[#edf7f8] ${globeClassName}`}
       >
         <canvas
           ref={canvasRef}
