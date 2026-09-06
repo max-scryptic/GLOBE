@@ -1,4 +1,5 @@
 import { CobeGlobeCard } from "@/components/cobe-globe-card";
+import { D3GlobeCard } from "@/components/d3-globe-card";
 import { ReactGlobeCard } from "@/components/react-globe-card";
 
 export default function Home() {
@@ -10,11 +11,12 @@ export default function Home() {
             Globe comparison
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-            Two WebGL globe implementations shown in matching cards on the main
+            Three globe implementations shown in matching cards on the main
             page.
           </p>
         </header>
         <ReactGlobeCard />
+        <D3GlobeCard />
         <CobeGlobeCard />
       </div>
     </main>
