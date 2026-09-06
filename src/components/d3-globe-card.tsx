@@ -11,6 +11,9 @@ const COUNTRY_FILL = "#a8df8e";
 const SELECTED_COUNTRY_FILL = "#2f7d4d";
 const COUNTRY_STROKE = "#facc15";
 const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
+const FLIGHT_PATH_STROKE = "rgba(37, 99, 235, 0.78)";
+const FLIGHT_PATH_GLOW = "rgba(14, 165, 233, 0.18)";
+const FLIGHT_MARKER_FILL = "#f97316";
 
 type GeoFeature = {
   type: "Feature";
@@ -24,6 +27,7 @@ type FeatureCollection = {
 };
 
 type Projection = {
+  (coordinates: [number, number]): [number, number] | null;
   clipAngle(value: number): Projection;
   invert(point: [number, number]): [number, number] | null;
   rotate(value: [number, number, number]): Projection;
@@ -39,6 +43,10 @@ type GeoPath = {
 type D3Like = {
   geoContains(feature: unknown, coordinates: [number, number]): boolean;
   geoGraticule10(): unknown;
+  geoInterpolate(
+    from: [number, number],
+    to: [number, number],
+  ): (value: number) => [number, number];
   geoOrthographic(): Projection;
   geoPath(projection: Projection): GeoPath;
   json<T>(url: string): Promise<T>;
@@ -51,6 +59,106 @@ declare global {
 }
 
 let d3Promise: Promise<D3Like> | null = null;
+
+type FlightRoute = {
+  from: string;
+  fromCoordinates: [number, number];
+  to: string;
+  toCoordinates: [number, number];
+};
+
+const flightRoutes: FlightRoute[] = [
+  {
+    from: "United States",
+    fromCoordinates: [-74.006, 40.7128],
+    to: "United Kingdom",
+    toCoordinates: [-0.1276, 51.5072],
+  },
+  {
+    from: "United Kingdom",
+    fromCoordinates: [-0.1276, 51.5072],
+    to: "United Arab Emirates",
+    toCoordinates: [55.2708, 25.2048],
+  },
+  {
+    from: "United Arab Emirates",
+    fromCoordinates: [55.2708, 25.2048],
+    to: "India",
+    toCoordinates: [77.209, 28.6139],
+  },
+  {
+    from: "India",
+    fromCoordinates: [77.209, 28.6139],
+    to: "Singapore",
+    toCoordinates: [103.8198, 1.3521],
+  },
+  {
+    from: "Singapore",
+    fromCoordinates: [103.8198, 1.3521],
+    to: "Japan",
+    toCoordinates: [139.6503, 35.6762],
+  },
+  {
+    from: "Japan",
+    fromCoordinates: [139.6503, 35.6762],
+    to: "Australia",
+    toCoordinates: [151.2093, -33.8688],
+  },
+  {
+    from: "Australia",
+    fromCoordinates: [151.2093, -33.8688],
+    to: "New Zealand",
+    toCoordinates: [174.7633, -36.8485],
+  },
+  {
+    from: "United States",
+    fromCoordinates: [-122.4194, 37.7749],
+    to: "Japan",
+    toCoordinates: [139.6503, 35.6762],
+  },
+  {
+    from: "Canada",
+    fromCoordinates: [-79.3832, 43.6532],
+    to: "France",
+    toCoordinates: [2.3522, 48.8566],
+  },
+  {
+    from: "France",
+    fromCoordinates: [2.3522, 48.8566],
+    to: "South Africa",
+    toCoordinates: [28.0473, -26.2041],
+  },
+  {
+    from: "Brazil",
+    fromCoordinates: [-46.6333, -23.5505],
+    to: "Portugal",
+    toCoordinates: [-9.1393, 38.7223],
+  },
+  {
+    from: "Mexico",
+    fromCoordinates: [-99.1332, 19.4326],
+    to: "Colombia",
+    toCoordinates: [-74.0721, 4.711],
+  },
+  {
+    from: "Argentina",
+    fromCoordinates: [-58.3816, -34.6037],
+    to: "Spain",
+    toCoordinates: [-3.7038, 40.4168],
+  },
+  {
+    from: "Germany",
+    fromCoordinates: [13.405, 52.52],
+    to: "Turkey",
+    toCoordinates: [28.9784, 41.0082],
+  },
+  {
+    from: "Egypt",
+    fromCoordinates: [31.2357, 30.0444],
+    to: "Kenya",
+    toCoordinates: [36.8219, -1.2921],
+  },
+];
 
 function loadD3() {
   if (typeof window === "undefined") {
@@ -124,11 +232,119 @@ function getCountryKey(feature: GeoFeature, index: number) {
     : `country-${index}`;
 }
 
+function isCoordinateVisible(
+  coordinates: [number, number],
+  rotation: [number, number, number],
+) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const [longitude, latitude] = coordinates;
+  const centerLongitude = -rotation[0];
+  const centerLatitude = -rotation[1];
+  const deltaLongitude = toRadians(longitude - centerLongitude);
+  const latitudeRadians = toRadians(latitude);
+  const centerLatitudeRadians = toRadians(centerLatitude);
+  const cosineDistance =
+    Math.sin(centerLatitudeRadians) * Math.sin(latitudeRadians) +
+    Math.cos(centerLatitudeRadians) *
+      Math.cos(latitudeRadians) *
+      Math.cos(deltaLongitude);
+
+  return cosineDistance >= 0;
+}
+
+function drawFlightMarker(
+  context: CanvasRenderingContext2D,
+  projection: Projection,
+  coordinates: [number, number],
+  center: [number, number],
+  radius: number,
+  rotation: [number, number, number],
+) {
+  const point = projection(coordinates);
+
+  if (
+    !point ||
+    !isCoordinateVisible(coordinates, rotation) ||
+    Math.hypot(point[0] - center[0], point[1] - center[1]) > radius
+  ) {
+    return;
+  }
+
+  context.beginPath();
+  context.arc(point[0], point[1], 3.5, 0, Math.PI * 2);
+  context.fillStyle = FLIGHT_MARKER_FILL;
+  context.fill();
+  context.lineWidth = 1.4;
+  context.strokeStyle = "rgba(255, 255, 255, 0.88)";
+  context.stroke();
+}
+
+function drawFlightRoute(
+  context: CanvasRenderingContext2D,
+  projection: Projection,
+  interpolate: (value: number) => [number, number],
+  center: [number, number],
+  radius: number,
+  dashOffset: number,
+  rotation: [number, number, number],
+) {
+  const visibleSegments: [number, number][][] = [];
+  let currentSegment: [number, number][] = [];
+
+  for (let index = 0; index <= 48; index += 1) {
+    const coordinates = interpolate(index / 48);
+    const point = projection(coordinates);
+    const isVisible =
+      point &&
+      isCoordinateVisible(coordinates, rotation) &&
+      Math.hypot(point[0] - center[0], point[1] - center[1]) <= radius + 1;
+
+    if (point && isVisible) {
+      currentSegment.push(point);
+      continue;
+    }
+
+    if (currentSegment.length > 1) {
+      visibleSegments.push(currentSegment);
+    }
+
+    currentSegment = [];
+  }
+
+  if (currentSegment.length > 1) {
+    visibleSegments.push(currentSegment);
+  }
+
+  visibleSegments.forEach((segment) => {
+    context.save();
+    context.beginPath();
+    segment.forEach(([x, y], index) => {
+      if (index === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    });
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = FLIGHT_PATH_GLOW;
+    context.lineWidth = 8;
+    context.stroke();
+    context.setLineDash([8, 10]);
+    context.lineDashOffset = dashOffset;
+    context.strokeStyle = FLIGHT_PATH_STROKE;
+    context.lineWidth = 2.2;
+    context.stroke();
+    context.restore();
+  });
+}
+
 type D3GlobeCardProps = {
   className?: string;
   description?: string;
   globeClassName?: string;
   selectable?: boolean;
+  showFlightPaths?: boolean;
   title?: string;
 };
 
@@ -137,6 +353,7 @@ export function D3GlobeCard({
   description = "A flat-color orthographic globe drawn with D3 geographic projections.",
   globeClassName = "",
   selectable = false,
+  showFlightPaths = false,
   title = "D3.js",
 }: D3GlobeCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -196,11 +413,19 @@ export function D3GlobeCard({
           .translate(center);
         const path = d3.geoPath(projection).context(context);
         const graticule = d3.geoGraticule10();
+        const routeInterpolators = flightRoutes.map((route) => ({
+          route,
+          interpolate: d3.geoInterpolate(
+            route.fromCoordinates,
+            route.toCoordinates,
+          ),
+        }));
         let rotation: [number, number, number] = [-25, -10, 0];
         let zoomScale = 1;
         let isDragging = false;
         let lastPointerPosition: { x: number; y: number } | null = null;
         let pointerDownPosition: { x: number; y: number } | null = null;
+        const startedAt = performance.now();
 
         const clamp = (value: number, min: number, max: number) =>
           Math.min(Math.max(value, min), max);
@@ -314,6 +539,7 @@ export function D3GlobeCard({
         const render = () => {
           context.clearRect(0, 0, width, height);
           projection.rotate(rotation).scale(baseScale * zoomScale);
+          const visibleRadius = baseScale * zoomScale;
 
           context.beginPath();
           path({ type: "Sphere" });
@@ -334,6 +560,38 @@ export function D3GlobeCard({
               selectedCountriesRef.current.has(getCountryKey(feature, index)),
             );
           });
+
+          if (showFlightPaths) {
+            const dashOffset = -((performance.now() - startedAt) / 65);
+
+            routeInterpolators.forEach(({ route, interpolate }) => {
+              drawFlightRoute(
+                context,
+                projection,
+                interpolate,
+                center,
+                visibleRadius,
+                dashOffset,
+                rotation,
+              );
+              drawFlightMarker(
+                context,
+                projection,
+                route.fromCoordinates,
+                center,
+                visibleRadius,
+                rotation,
+              );
+              drawFlightMarker(
+                context,
+                projection,
+                route.toCoordinates,
+                center,
+                visibleRadius,
+                rotation,
+              );
+            });
+          }
 
           if (!isDragging) {
             rotation = [rotation[0] + 0.16, rotation[1], 0];
@@ -357,7 +615,7 @@ export function D3GlobeCard({
       cancelAnimationFrame(frameId);
       disposeInteraction();
     };
-  }, [selectable, size.height, size.width]);
+  }, [selectable, showFlightPaths, size.height, size.width]);
 
   return (
     <section
@@ -368,14 +626,28 @@ export function D3GlobeCard({
           <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
           <p className="mt-1 text-sm text-zinc-600">{description}</p>
         </div>
-        {selectable ? (
-          <div className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-right">
-            <div className="text-lg font-semibold leading-none text-emerald-900">
-              {selectedCount}
-            </div>
-            <div className="mt-1 text-xs font-medium text-emerald-700">
-              selected
-            </div>
+        {selectable || showFlightPaths ? (
+          <div className="flex shrink-0 gap-2">
+            {showFlightPaths ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-right">
+                <div className="text-lg font-semibold leading-none text-sky-950">
+                  {flightRoutes.length}
+                </div>
+                <div className="mt-1 text-xs font-medium text-sky-700">
+                  routes
+                </div>
+              </div>
+            ) : null}
+            {selectable ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-right">
+                <div className="text-lg font-semibold leading-none text-emerald-900">
+                  {selectedCount}
+                </div>
+                <div className="mt-1 text-xs font-medium text-emerald-700">
+                  selected
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

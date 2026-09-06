@@ -6,7 +6,7 @@ import { D3GlobeCard } from "@/components/d3-globe-card";
 import { ReactGlobeCard } from "@/components/react-globe-card";
 import { cn } from "@/lib/utils";
 
-const tabs = ["Globes", "Country Selector"] as const;
+const tabs = ["Globes", "Country Selector", "Flight Paths"] as const;
 
 type Tab = (typeof tabs)[number];
 
@@ -40,12 +40,20 @@ export default function Home() {
             <D3GlobeCard />
             <CobeGlobeCard />
           </>
-        ) : (
+        ) : activeTab === "Country Selector" ? (
           <D3GlobeCard
             description="Track visited countries directly on the globe."
             globeClassName="h-[620px] min-h-[460px]"
             selectable
             title="Country Selector"
+          />
+        ) : (
+          <D3GlobeCard
+            description="Select countries while animated routes mimic international flight paths."
+            globeClassName="h-[620px] min-h-[460px]"
+            selectable
+            showFlightPaths
+            title="Flight Paths"
           />
         )}
       </div>
