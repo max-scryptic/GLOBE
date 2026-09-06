@@ -17,6 +17,7 @@ const FLIGHT_MARKER_FILL = "#f97316";
 const FLIGHT_ROUTE_SAMPLE_COUNT = 96;
 const FLIGHT_ROUTE_FLATTENING = 0.38;
 const FLIGHT_ROUTE_EDGE_FADE = 0.16;
+const FLIGHT_ROUTE_OCCLUSION_FADE = 0.075;
 
 type GeoFeature = {
   type: "Feature";
@@ -273,17 +274,56 @@ function getAngularDistance(
   return 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
-function liftPointAboveGlobe(
-  point: [number, number],
+function projectFlightRoutePoint(
+  coordinates: [number, number],
+  rotation: [number, number, number],
   center: [number, number],
   radius: number,
   lift: number,
-): [number, number] {
-  const deltaX = point[0] - center[0];
-  const deltaY = point[1] - center[1];
-  const liftRatio = lift / radius;
+) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const [longitude, latitude] = coordinates;
+  const centerLongitude = -rotation[0];
+  const centerLatitude = -rotation[1];
+  const deltaLongitude = toRadians(longitude - centerLongitude);
+  const latitudeRadians = toRadians(latitude);
+  const centerLatitudeRadians = toRadians(centerLatitude);
+  const cosLatitude = Math.cos(latitudeRadians);
+  const sinLatitude = Math.sin(latitudeRadians);
+  const cosCenterLatitude = Math.cos(centerLatitudeRadians);
+  const sinCenterLatitude = Math.sin(centerLatitudeRadians);
+  const cosDeltaLongitude = Math.cos(deltaLongitude);
+  const altitudeScale = 1 + lift / radius;
+  const xUnit = cosLatitude * Math.sin(deltaLongitude);
+  const yUnit =
+    -(
+      cosCenterLatitude * sinLatitude -
+      sinCenterLatitude * cosLatitude * cosDeltaLongitude
+    );
+  const zUnit =
+    sinCenterLatitude * sinLatitude +
+    cosCenterLatitude * cosLatitude * cosDeltaLongitude;
+  const screenDistance = Math.hypot(xUnit, yUnit) * radius * altitudeScale;
 
-  return [point[0] + deltaX * liftRatio, point[1] + deltaY * liftRatio];
+  return {
+    point: [
+      center[0] + xUnit * radius * altitudeScale,
+      center[1] + yUnit * radius * altitudeScale,
+    ] satisfies [number, number],
+    screenDistance,
+    zUnit,
+  };
+}
+
+function getFlightRouteAlpha(screenDistance: number, radius: number, zUnit: number) {
+  if (zUnit >= 0) {
+    return 1;
+  }
+
+  return Math.min(
+    Math.max((screenDistance - radius) / (radius * FLIGHT_ROUTE_OCCLUSION_FADE), 0),
+    1,
+  );
 }
 
 function drawFlightMarker(
@@ -374,7 +414,6 @@ function getRouteGradient(
 
 function drawFlightRoute(
   context: CanvasRenderingContext2D,
-  projection: Projection,
   route: FlightRoute,
   interpolate: (value: number) => [number, number],
   center: [number, number],
@@ -391,26 +430,32 @@ function drawFlightRoute(
   for (let index = 0; index <= FLIGHT_ROUTE_SAMPLE_COUNT; index += 1) {
     const progress = index / FLIGHT_ROUTE_SAMPLE_COUNT;
     const coordinates = interpolate(progress);
-    const point = projection(coordinates);
-    const visibility = getCoordinateVisibility(coordinates, rotation);
-    const distanceFromCenter = point
-      ? Math.hypot(point[0] - center[0], point[1] - center[1])
-      : Infinity;
+    const lift = Math.sin(progress * Math.PI) * arcHeight;
+    const projectedPoint = projectFlightRoutePoint(
+      coordinates,
+      rotation,
+      center,
+      radius,
+      lift,
+    );
+    const visibility = getFlightRouteAlpha(
+      projectedPoint.screenDistance,
+      radius,
+      projectedPoint.zUnit,
+    );
+    const point = projectedPoint.point;
     const distanceFromPrevious =
-      point && previousPoint
+      previousPoint
         ? Math.hypot(point[0] - previousPoint[0], point[1] - previousPoint[1])
         : 0;
     const isVisible =
-      point &&
       visibility > 0 &&
-      distanceFromCenter <= radius + 2 &&
       distanceFromPrevious < radius * 0.4;
 
-    if (point && isVisible) {
-      const lift = Math.sin(progress * Math.PI) * arcHeight;
+    if (isVisible) {
       currentSegment.push({
         alpha: visibility,
-        point: liftPointAboveGlobe(point, center, radius, lift),
+        point,
       });
       previousPoint = point;
       continue;
@@ -688,7 +733,6 @@ export function D3GlobeCard({
             routeInterpolators.forEach(({ route, interpolate }) => {
               drawFlightRoute(
                 context,
-                projection,
                 route,
                 interpolate,
                 center,
