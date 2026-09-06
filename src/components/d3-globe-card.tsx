@@ -11,8 +11,8 @@ const COUNTRY_FILL = "#a8df8e";
 const SELECTED_COUNTRY_FILL = "#2f7d4d";
 const COUNTRY_STROKE = "#facc15";
 const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
-const FLIGHT_PATH_STROKE = "rgba(37, 99, 235, 0.78)";
-const FLIGHT_PATH_GLOW = "rgba(14, 165, 233, 0.18)";
+const FLIGHT_PATH_STROKE = "rgba(236, 72, 153, 0.96)";
+const FLIGHT_PATH_GLOW = "rgba(255, 255, 255, 0.62)";
 const FLIGHT_MARKER_FILL = "#f97316";
 
 type GeoFeature = {
@@ -252,6 +252,43 @@ function isCoordinateVisible(
   return cosineDistance >= 0;
 }
 
+function getAngularDistance(
+  from: [number, number],
+  to: [number, number],
+) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const [fromLongitude, fromLatitude] = from.map(toRadians);
+  const [toLongitude, toLatitude] = to.map(toRadians);
+  const deltaLongitude = toLongitude - fromLongitude;
+  const deltaLatitude = toLatitude - fromLatitude;
+  const haversine =
+    Math.sin(deltaLatitude / 2) ** 2 +
+    Math.cos(fromLatitude) *
+      Math.cos(toLatitude) *
+      Math.sin(deltaLongitude / 2) ** 2;
+
+  return 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function liftPointAboveGlobe(
+  point: [number, number],
+  center: [number, number],
+  lift: number,
+): [number, number] {
+  const deltaX = point[0] - center[0];
+  const deltaY = point[1] - center[1];
+  const distance = Math.hypot(deltaX, deltaY);
+
+  if (distance === 0) {
+    return [point[0], point[1] - lift];
+  }
+
+  return [
+    point[0] + (deltaX / distance) * lift,
+    point[1] + (deltaY / distance) * lift,
+  ];
+}
+
 function drawFlightMarker(
   context: CanvasRenderingContext2D,
   projection: Projection,
@@ -282,6 +319,7 @@ function drawFlightMarker(
 function drawFlightRoute(
   context: CanvasRenderingContext2D,
   projection: Projection,
+  route: FlightRoute,
   interpolate: (value: number) => [number, number],
   center: [number, number],
   radius: number,
@@ -290,9 +328,12 @@ function drawFlightRoute(
 ) {
   const visibleSegments: [number, number][][] = [];
   let currentSegment: [number, number][] = [];
+  const distance = getAngularDistance(route.fromCoordinates, route.toCoordinates);
+  const arcHeight = radius * Math.min(0.34, 0.16 + distance * 0.07);
 
   for (let index = 0; index <= 48; index += 1) {
-    const coordinates = interpolate(index / 48);
+    const progress = index / 48;
+    const coordinates = interpolate(progress);
     const point = projection(coordinates);
     const isVisible =
       point &&
@@ -300,7 +341,8 @@ function drawFlightRoute(
       Math.hypot(point[0] - center[0], point[1] - center[1]) <= radius + 1;
 
     if (point && isVisible) {
-      currentSegment.push(point);
+      const lift = Math.sin(progress * Math.PI) * arcHeight;
+      currentSegment.push(liftPointAboveGlobe(point, center, lift));
       continue;
     }
 
@@ -328,12 +370,12 @@ function drawFlightRoute(
     context.lineCap = "round";
     context.lineJoin = "round";
     context.strokeStyle = FLIGHT_PATH_GLOW;
-    context.lineWidth = 8;
+    context.lineWidth = 9;
     context.stroke();
     context.setLineDash([8, 10]);
     context.lineDashOffset = dashOffset;
     context.strokeStyle = FLIGHT_PATH_STROKE;
-    context.lineWidth = 2.2;
+    context.lineWidth = 2.8;
     context.stroke();
     context.restore();
   });
@@ -568,6 +610,7 @@ export function D3GlobeCard({
               drawFlightRoute(
                 context,
                 projection,
+                route,
                 interpolate,
                 center,
                 visibleRadius,
