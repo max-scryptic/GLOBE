@@ -15,7 +15,7 @@ const FLIGHT_PATH_STROKE_RGB = "236, 72, 153";
 const FLIGHT_PATH_GLOW_RGB = "255, 255, 255";
 const FLIGHT_MARKER_FILL = "#f97316";
 const FLIGHT_ROUTE_SAMPLE_COUNT = 96;
-const FLIGHT_ROUTE_FLATTENING = 0.5;
+const FLIGHT_ROUTE_FLATTENING = 0.38;
 const FLIGHT_ROUTE_EDGE_FADE = 0.16;
 
 type GeoFeature = {
@@ -276,20 +276,14 @@ function getAngularDistance(
 function liftPointAboveGlobe(
   point: [number, number],
   center: [number, number],
+  radius: number,
   lift: number,
 ): [number, number] {
   const deltaX = point[0] - center[0];
   const deltaY = point[1] - center[1];
-  const distance = Math.hypot(deltaX, deltaY);
+  const liftRatio = lift / radius;
 
-  if (distance === 0) {
-    return [point[0], point[1] - lift];
-  }
-
-  return [
-    point[0] + (deltaX / distance) * lift,
-    point[1] + (deltaY / distance) * lift,
-  ];
+  return [point[0] + deltaX * liftRatio, point[1] + deltaY * liftRatio];
 }
 
 function drawFlightMarker(
@@ -392,7 +386,7 @@ function drawFlightRoute(
   let currentSegment: FlightRoutePoint[] = [];
   let previousPoint: [number, number] | null = null;
   const distance = getAngularDistance(route.fromCoordinates, route.toCoordinates);
-  const arcHeight = radius * Math.min(0.17, 0.08 + distance * 0.035);
+  const arcHeight = radius * Math.min(0.23, 0.11 + distance * 0.045);
 
   for (let index = 0; index <= FLIGHT_ROUTE_SAMPLE_COUNT; index += 1) {
     const progress = index / FLIGHT_ROUTE_SAMPLE_COUNT;
@@ -416,7 +410,7 @@ function drawFlightRoute(
       const lift = Math.sin(progress * Math.PI) * arcHeight;
       currentSegment.push({
         alpha: visibility,
-        point: liftPointAboveGlobe(point, center, lift),
+        point: liftPointAboveGlobe(point, center, radius, lift),
       });
       previousPoint = point;
       continue;
