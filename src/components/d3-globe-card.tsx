@@ -8,7 +8,7 @@ const WORLD_GEOJSON_URL =
   "https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson";
 
 const COUNTRY_FILL = "#a8df8e";
-const COUNTRY_STROKE = "rgba(35, 104, 74, 0.36)";
+const COUNTRY_STROKE = "#facc15";
 const GRATICULE_STROKE = "rgba(64, 132, 118, 0.22)";
 
 type GeoFeature = {
@@ -129,6 +129,7 @@ export function D3GlobeCard() {
 
     let cancelled = false;
     let frameId = 0;
+    let disposeInteraction = () => {};
 
     async function drawGlobe(canvas: HTMLCanvasElement) {
       try {
@@ -152,7 +153,7 @@ export function D3GlobeCard() {
         const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
         const width = size.width;
         const height = size.height;
-        const scale = Math.min(width, height) * 0.41;
+        const baseScale = Math.min(width, height) * 0.41;
         const center: [number, number] = [width / 2, height / 2 + 6];
 
         canvas.width = width * pixelRatio;
@@ -164,15 +165,78 @@ export function D3GlobeCard() {
         const projection = d3
           .geoOrthographic()
           .clipAngle(90)
-          .scale(scale)
+          .scale(baseScale)
           .translate(center);
         const path = d3.geoPath(projection).context(context);
         const graticule = d3.geoGraticule10();
-        let rotation = -25;
+        let rotation: [number, number, number] = [-25, -10, 0];
+        let zoomScale = 1;
+        let isDragging = false;
+        let lastPointerPosition: { x: number; y: number } | null = null;
+
+        const clamp = (value: number, min: number, max: number) =>
+          Math.min(Math.max(value, min), max);
+
+        const updateCursor = () => {
+          canvas.style.cursor = isDragging ? "grabbing" : "grab";
+        };
+
+        const handlePointerDown = (event: PointerEvent) => {
+          isDragging = true;
+          lastPointerPosition = { x: event.clientX, y: event.clientY };
+          canvas.setPointerCapture(event.pointerId);
+          updateCursor();
+        };
+
+        const handlePointerMove = (event: PointerEvent) => {
+          if (!isDragging || !lastPointerPosition) {
+            return;
+          }
+
+          const deltaX = event.clientX - lastPointerPosition.x;
+          const deltaY = event.clientY - lastPointerPosition.y;
+          rotation = [
+            rotation[0] + deltaX * 0.35,
+            clamp(rotation[1] - deltaY * 0.28, -75, 75),
+            0,
+          ];
+          lastPointerPosition = { x: event.clientX, y: event.clientY };
+        };
+
+        const stopDragging = (event: PointerEvent) => {
+          if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+          }
+
+          isDragging = false;
+          lastPointerPosition = null;
+          updateCursor();
+        };
+
+        const handleWheel = (event: WheelEvent) => {
+          event.preventDefault();
+          const zoomDelta = event.deltaY > 0 ? -0.08 : 0.08;
+          zoomScale = clamp(zoomScale + zoomDelta, 0.7, 1.75);
+        };
+
+        updateCursor();
+        canvas.addEventListener("pointerdown", handlePointerDown);
+        canvas.addEventListener("pointermove", handlePointerMove);
+        canvas.addEventListener("pointerup", stopDragging);
+        canvas.addEventListener("pointercancel", stopDragging);
+        canvas.addEventListener("wheel", handleWheel, { passive: false });
+        disposeInteraction = () => {
+          canvas.removeEventListener("pointerdown", handlePointerDown);
+          canvas.removeEventListener("pointermove", handlePointerMove);
+          canvas.removeEventListener("pointerup", stopDragging);
+          canvas.removeEventListener("pointercancel", stopDragging);
+          canvas.removeEventListener("wheel", handleWheel);
+          canvas.style.cursor = "";
+        };
 
         const render = () => {
           context.clearRect(0, 0, width, height);
-          projection.rotate([rotation, -10, 0]);
+          projection.rotate(rotation).scale(baseScale * zoomScale);
 
           context.beginPath();
           path({ type: "Sphere" });
@@ -189,7 +253,10 @@ export function D3GlobeCard() {
             fillCountry(context, path, feature);
           });
 
-          rotation += 0.16;
+          if (!isDragging) {
+            rotation = [rotation[0] + 0.16, rotation[1], 0];
+          }
+
           frameId = requestAnimationFrame(render);
         };
 
@@ -206,6 +273,7 @@ export function D3GlobeCard() {
     return () => {
       cancelled = true;
       cancelAnimationFrame(frameId);
+      disposeInteraction();
     };
   }, [size.height, size.width]);
 
@@ -224,7 +292,7 @@ export function D3GlobeCard() {
         <canvas
           ref={canvasRef}
           className="h-full w-full"
-          style={{ contain: "layout paint size" }}
+          style={{ contain: "layout paint size", touchAction: "none" }}
         />
         {status !== "ready" ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm font-medium text-zinc-600">

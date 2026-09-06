@@ -118,7 +118,14 @@ export function ReactGlobeCard() {
               if (controls) {
                 controls.autoRotate = true;
                 controls.autoRotateSpeed = 0.55;
-                controls.enableZoom = false;
+                controls.enableZoom = true;
+                controls.enablePan = true;
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.08;
+                controls.rotateSpeed = 0.65;
+                controls.zoomSpeed = 0.75;
+                controls.minDistance = 190;
+                controls.maxDistance = 620;
               }
             }}
             {...globeProps}
