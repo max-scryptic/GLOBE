@@ -16,11 +16,21 @@ const EARTH_MU_KM3_S2 = 398600.4418;
 const TWO_PI = Math.PI * 2;
 
 const satelliteGroups = [
-  { id: "featured", label: "Featured", limit: 700 },
-  { id: "stations", label: "Stations", limit: 150 },
-  { id: "active", label: "Active", limit: 1100 },
+  { id: "featured", label: "Featured", limit: 900 },
+  { id: "active", label: "Active", limit: 1600 },
   { id: "starlink", label: "Starlink", limit: 12000 },
+  { id: "oneweb", label: "OneWeb", limit: 1000 },
+  { id: "planet", label: "Planet", limit: 800 },
+  { id: "weather", label: "Weather", limit: 900 },
+  { id: "stations", label: "Stations", limit: 150 },
   { id: "gps", label: "GPS", limit: 400 },
+  { id: "galileo", label: "Galileo", limit: 300 },
+  { id: "glonass", label: "GLONASS", limit: 300 },
+  { id: "iridium", label: "Iridium", limit: 400 },
+  { id: "noaa", label: "NOAA", limit: 300 },
+  { id: "goes", label: "GOES", limit: 200 },
+  { id: "amateur", label: "Amateur", limit: 700 },
+  { id: "cubesat", label: "CubeSats", limit: 900 },
   { id: "brightest", label: "Bright", limit: 250 },
 ] as const;
 

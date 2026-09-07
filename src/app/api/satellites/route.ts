@@ -2,14 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 
 const CELESTRAK_GROUPS = {
   active: "ACTIVE",
+  amateur: "AMATEUR",
   brightest: "VISUAL",
+  cubesat: "CUBESAT",
   featured: "FEATURED",
+  galileo: "GALILEO",
+  glonass: "GLONASS",
+  goes: "GOES",
   gps: "GPS-OPS",
+  iridium: "IRIDIUM",
+  noaa: "NOAA",
+  oneweb: "ONEWEB",
+  planet: "PLANET",
   starlink: "STARLINK",
   stations: "STATIONS",
+  weather: "WEATHER",
 } as const;
 
-const FEATURED_GROUPS = ["STATIONS", "VISUAL", "GPS-OPS", "WEATHER"] as const;
+const FEATURED_GROUPS = [
+  "STATIONS",
+  "VISUAL",
+  "GPS-OPS",
+  "WEATHER",
+  "ONEWEB",
+] as const;
 const DEFAULT_LIMIT = 900;
 const MAX_LIMIT = 12000;
 const CACHE_TTL_MS = 1000 * 60 * 30;
