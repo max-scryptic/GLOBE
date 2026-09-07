@@ -19,7 +19,7 @@ const satelliteGroups = [
   { id: "featured", label: "Featured", limit: 700 },
   { id: "stations", label: "Stations", limit: 150 },
   { id: "active", label: "Active", limit: 1100 },
-  { id: "starlink", label: "Starlink", limit: 1600 },
+  { id: "starlink", label: "Starlink", limit: 12000 },
   { id: "gps", label: "GPS", limit: 400 },
   { id: "brightest", label: "Bright", limit: 250 },
 ] as const;
@@ -41,6 +41,7 @@ type OrbitElement = {
 type SatelliteApiResponse = {
   fetchedAt: string;
   group: string;
+  limit: number;
   source: string;
   totalAvailable: number;
   satellites: OrbitElement[];
@@ -195,6 +196,18 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+function formatGroupName(value: string) {
+  if (value === "STARLINK") {
+    return "SpaceX Starlink";
+  }
+
+  if (value === "FEATURED") {
+    return "Featured";
+  }
+
+  return value;
+}
+
 export function SatelliteGlobeCard() {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { ref: containerRef, size } = useElementSize<HTMLDivElement>();
@@ -317,8 +330,8 @@ export function SatelliteGlobeCard() {
             Satellite Orbits
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Public CelesTrak orbital elements propagated into live Earth
-            positions.
+            Public CelesTrak orbital elements, including the full SpaceX
+            Starlink constellation, propagated into live Earth positions.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -407,7 +420,7 @@ export function SatelliteGlobeCard() {
                 : loadState === "loading"
                   ? "Loading"
                   : metadata
-                    ? `${metadata.group} from CelesTrak`
+                    ? `${formatGroupName(metadata.group)} from CelesTrak`
                     : "Waiting"}
             </div>
           </div>
@@ -419,7 +432,8 @@ export function SatelliteGlobeCard() {
           </span>
           {metadata ? (
             <span className="ml-2 text-zinc-400">
-              {formatNumber(metadata.totalAvailable)} available in source group
+              showing {formatNumber(satellites.length)} of{" "}
+              {formatNumber(metadata.totalAvailable)} source objects
             </span>
           ) : null}
         </div>

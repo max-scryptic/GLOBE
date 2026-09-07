@@ -11,7 +11,7 @@ const CELESTRAK_GROUPS = {
 
 const FEATURED_GROUPS = ["STATIONS", "VISUAL", "GPS-OPS", "WEATHER"] as const;
 const DEFAULT_LIMIT = 900;
-const MAX_LIMIT = 2500;
+const MAX_LIMIT = 12000;
 const CACHE_TTL_MS = 1000 * 60 * 30;
 
 const responseCache = new Map<
