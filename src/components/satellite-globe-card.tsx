@@ -15,26 +15,36 @@ const EARTH_RADIUS_KM = 6378.137;
 const EARTH_MU_KM3_S2 = 398600.4418;
 const TWO_PI = Math.PI * 2;
 
+// Every satellite is a positioned DOM element that is re-projected on each
+// tick, so these baselines are deliberately small. Use the density control to
+// trade frame rate for coverage.
 const satelliteGroups = [
-  { id: "featured", label: "Featured", limit: 900 },
-  { id: "active", label: "Active", limit: 1600 },
-  { id: "starlink", label: "Starlink", limit: 12000 },
-  { id: "oneweb", label: "OneWeb", limit: 1000 },
-  { id: "planet", label: "Planet", limit: 800 },
-  { id: "weather", label: "Weather", limit: 900 },
-  { id: "stations", label: "Stations", limit: 150 },
-  { id: "gps", label: "GPS", limit: 400 },
-  { id: "galileo", label: "Galileo", limit: 300 },
-  { id: "glonass", label: "GLONASS", limit: 300 },
-  { id: "iridium", label: "Iridium", limit: 400 },
-  { id: "noaa", label: "NOAA", limit: 300 },
-  { id: "goes", label: "GOES", limit: 200 },
-  { id: "amateur", label: "Amateur", limit: 700 },
-  { id: "cubesat", label: "CubeSats", limit: 900 },
-  { id: "brightest", label: "Bright", limit: 250 },
+  { id: "featured", label: "Featured", limit: 120 },
+  { id: "active", label: "Active", limit: 200 },
+  { id: "starlink", label: "Starlink", limit: 250 },
+  { id: "oneweb", label: "OneWeb", limit: 150 },
+  { id: "planet", label: "Planet", limit: 120 },
+  { id: "weather", label: "Weather", limit: 120 },
+  { id: "stations", label: "Stations", limit: 60 },
+  { id: "gps", label: "GPS", limit: 80 },
+  { id: "galileo", label: "Galileo", limit: 60 },
+  { id: "glonass", label: "GLONASS", limit: 60 },
+  { id: "iridium", label: "Iridium", limit: 100 },
+  { id: "noaa", label: "NOAA", limit: 60 },
+  { id: "goes", label: "GOES", limit: 40 },
+  { id: "amateur", label: "Amateur", limit: 120 },
+  { id: "cubesat", label: "CubeSats", limit: 120 },
+  { id: "brightest", label: "Bright", limit: 100 },
+] as const;
+
+const densityOptions = [
+  { id: "low", label: "Low", multiplier: 1 },
+  { id: "medium", label: "Medium", multiplier: 3 },
+  { id: "high", label: "High", multiplier: 8 },
 ] as const;
 
 type SatelliteGroup = (typeof satelliteGroups)[number]["id"];
+type SatelliteDensity = (typeof densityOptions)[number]["id"];
 
 type OrbitElement = {
   OBJECT_NAME?: string;
@@ -222,6 +232,7 @@ export function SatelliteGlobeCard() {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const { ref: containerRef, size } = useElementSize<HTMLDivElement>();
   const [activeGroup, setActiveGroup] = useState<SatelliteGroup>("featured");
+  const [density, setDensity] = useState<SatelliteDensity>("low");
   const [satellites, setSatellites] = useState<OrbitElement[]>([]);
   const [metadata, setMetadata] = useState<SatelliteApiResponse | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -230,6 +241,9 @@ export function SatelliteGlobeCard() {
   const selectedGroup = satelliteGroups.find(
     (group) => group.id === activeGroup,
   );
+  const densityMultiplier =
+    densityOptions.find((option) => option.id === density)?.multiplier ?? 1;
+  const requestedLimit = (selectedGroup?.limit ?? 120) * densityMultiplier;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -238,9 +252,8 @@ export function SatelliteGlobeCard() {
       setLoadState("loading");
 
       try {
-        const limit = selectedGroup?.limit ?? 900;
         const response = await fetch(
-          `/api/satellites?group=${activeGroup}&limit=${limit}`,
+          `/api/satellites?group=${activeGroup}&limit=${requestedLimit}`,
           { signal: controller.signal },
         );
 
@@ -267,7 +280,7 @@ export function SatelliteGlobeCard() {
     return () => {
       controller.abort();
     };
-  }, [activeGroup, selectedGroup?.limit]);
+  }, [activeGroup, requestedLimit]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -320,7 +333,11 @@ export function SatelliteGlobeCard() {
 
         return dot;
       },
-      htmlTransitionDuration: 900,
+      // Positions refresh every second; tweening each marker on top of that
+      // keeps a transition running on every element for the whole frame budget.
+      // Positions refresh every second; tweening each marker on top of that
+      // keeps a transition running on every element for the whole frame budget.
+      htmlTransitionDuration: 0,
       atmosphereColor: "#22d3ee",
       atmosphereAltitude: 0.13,
       backgroundColor: "rgba(0,0,0,0)",
@@ -340,9 +357,30 @@ export function SatelliteGlobeCard() {
             Satellite Orbits
           </h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Public CelesTrak orbital elements, including the full SpaceX
-            Starlink constellation, propagated into live Earth positions.
+            Public CelesTrak orbital elements propagated into live Earth
+            positions. A trimmed sample loads by default; raise the density if
+            your machine can take it.
           </p>
+          <div className="mt-3 flex items-center gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Density
+            </span>
+            {densityOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setDensity(option.id)}
+                className={cn(
+                  "rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors",
+                  density === option.id
+                    ? "border-zinc-950 bg-zinc-950 text-white"
+                    : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {satelliteGroups.map((group) => (

@@ -5,9 +5,16 @@ import { CobeGlobeCard } from "@/components/cobe-globe-card";
 import { D3GlobeCard } from "@/components/d3-globe-card";
 import { ReactGlobeCard } from "@/components/react-globe-card";
 import { SatelliteGlobeCard } from "@/components/satellite-globe-card";
+import { SolarSystemCard } from "@/components/solar-system-card";
 import { cn } from "@/lib/utils";
 
-const tabs = ["Globes", "Country Selector", "Flight Paths", "Satellites"] as const;
+const tabs = [
+  "Globes",
+  "Country Selector",
+  "Flight Paths",
+  "Satellites",
+  "Solar System",
+] as const;
 
 type Tab = (typeof tabs)[number];
 
@@ -56,8 +63,10 @@ export default function Home() {
             showFlightPaths
             title="Flight Paths"
           />
-        ) : (
+        ) : activeTab === "Satellites" ? (
           <SatelliteGlobeCard />
+        ) : (
+          <SolarSystemCard />
         )}
       </div>
     </main>
