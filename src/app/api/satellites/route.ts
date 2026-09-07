@@ -27,7 +27,7 @@ const FEATURED_GROUPS = [
   "ONEWEB",
 ] as const;
 const DEFAULT_LIMIT = 900;
-const MAX_LIMIT = 2500;
+const MAX_LIMIT = 12000;
 const CACHE_TTL_MS = 1000 * 60 * 30;
 
 const responseCache = new Map<
